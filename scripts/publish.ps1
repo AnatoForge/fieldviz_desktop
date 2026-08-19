@@ -19,6 +19,21 @@ function Invoke-External([string]$FilePath, [string[]]$Arguments) {
     }
 }
 
+function Invoke-CaptureAllowFailure([string]$FilePath, [string[]]$Arguments) {
+    $PreviousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $Output = (& $FilePath @Arguments 2>&1) -join "`n"
+        $ExitCode = $LASTEXITCODE
+        return [ordered]@{
+            exitCode = $ExitCode
+            output = $Output.Trim()
+        }
+    } finally {
+        $ErrorActionPreference = $PreviousPreference
+    }
+}
+
 function Require-PublicRepository {
     $Status = (& git -C $Root status --porcelain) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw "Cannot read the public release repository status." }
@@ -63,11 +78,12 @@ function Get-ReleaseAssets([string]$ReleaseVersion, [string]$ReleaseDirectory) {
         throw "release-state.json does not match the requested version."
     }
     $InstallerName = "FieldViz_${ReleaseVersion}_x64_Setup.exe"
-    $ExpectedNames = @($InstallerName, "latest.json", "latest.json.sig")
+    $InstallerSignatureName = "$InstallerName.sig"
+    $ExpectedNames = @($InstallerName, $InstallerSignatureName, "latest.json", "latest.json.sig")
     $Properties = @($State.assets.PSObject.Properties)
     $ActualNames = @($Properties.Name | Sort-Object)
     if ((Compare-Object ($ExpectedNames | Sort-Object) $ActualNames)) {
-        throw "Release assets must contain one versioned installer, latest.json, and latest.json.sig."
+        throw "Release assets must contain one versioned installer, its signature, latest.json, and latest.json.sig."
     }
     $Paths = @()
     foreach ($Name in $ExpectedNames) {
@@ -85,11 +101,13 @@ function Get-ReleaseAssets([string]$ReleaseVersion, [string]$ReleaseDirectory) {
     $ExpectedPrefix = "https://github.com/$Repository/releases/download/v$ReleaseVersion/"
     $Target = $Manifest.platforms.'windows-x86_64'
     $InstallerRecord = $State.assets.$InstallerName
+    $InstallerSignature = (Get-Content -Raw -Encoding ASCII -LiteralPath (Join-Path $ResolvedDirectory $InstallerSignatureName)).Trim()
     if (
         $Manifest.version -ne $ReleaseVersion -or
         -not $Target.url.StartsWith($ExpectedPrefix) -or
         $Target.sha256 -ne $InstallerRecord.sha256 -or
-        [long]$Target.size -ne [long]$InstallerRecord.size
+        [long]$Target.size -ne [long]$InstallerRecord.size -or
+        $Target.signature -ne $InstallerSignature
     ) {
         throw "latest.json has an invalid version, URL, or installer digest."
     }
@@ -98,10 +116,9 @@ function Get-ReleaseAssets([string]$ReleaseVersion, [string]$ReleaseDirectory) {
 
 function Publish-Release([string]$ReleaseVersion, [string[]]$Assets) {
     $Tag = "v$ReleaseVersion"
-    $View = & $script:Gh release view $Tag --repo $Repository --json isDraft,assets 2>$null
-    $ViewExitCode = $LASTEXITCODE
-    if ($ViewExitCode -eq 0) {
-        $Release = ($View -join "`n") | ConvertFrom-Json
+    $View = Invoke-CaptureAllowFailure $script:Gh @("release", "view", $Tag, "--repo", $Repository, "--json", "isDraft,assets")
+    if ($View.exitCode -eq 0) {
+        $Release = $View.output | ConvertFrom-Json
         if (-not $Release.isDraft) {
             $RemoteNames = @($Release.assets.name | Sort-Object)
             $LocalNames = @($Assets | ForEach-Object { Split-Path -Leaf $_ } | Sort-Object)
@@ -112,11 +129,13 @@ function Publish-Release([string]$ReleaseVersion, [string[]]$Assets) {
             return
         }
         Invoke-External $script:Gh (@("release", "upload", $Tag) + $Assets + @("--clobber", "--repo", $Repository))
-    } else {
+    } elseif ($View.output -match '(?im)^release not found\s*$') {
         Invoke-External $script:Gh (@("release", "create", $Tag) + $Assets + @(
             "--draft", "--target", $Branch, "--title", "FieldViz $Tag",
             "--notes", "FieldViz $ReleaseVersion", "--repo", $Repository
         ))
+    } else {
+        throw "Could not inspect release $Tag. $($View.output)"
     }
     Invoke-External $script:Gh @("release", "edit", $Tag, "--draft=false", "--latest", "--repo", $Repository)
     Write-Host "Published $Tag." -ForegroundColor Green

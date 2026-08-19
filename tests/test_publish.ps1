@@ -9,6 +9,9 @@ try {
     $InstallerName = "FieldViz_${Version}_x64_Setup.exe"
     $InstallerPath = Join-Path $Temporary $InstallerName
     [IO.File]::WriteAllBytes($InstallerPath, [byte[]](1, 2, 3, 4))
+    $InstallerSignatureName = "$InstallerName.sig"
+    $InstallerSignature = [Convert]::ToBase64String([byte[]](1..64))
+    [IO.File]::WriteAllText((Join-Path $Temporary $InstallerSignatureName), $InstallerSignature, [Text.Encoding]::ASCII)
     $InstallerHash = (Get-FileHash -LiteralPath $InstallerPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $Manifest = @{
         version = $Version
@@ -17,6 +20,7 @@ try {
                 url = "https://github.com/AnatoForge/fieldviz_desktop/releases/download/v$Version/$InstallerName"
                 sha256 = $InstallerHash
                 size = 4
+                signature = $InstallerSignature
             }
         }
     } | ConvertTo-Json -Depth 5
@@ -24,7 +28,7 @@ try {
     [IO.File]::WriteAllText((Join-Path $Temporary "latest.json.sig"), "signature", [Text.Encoding]::ASCII)
 
     $Assets = @{}
-    foreach ($Name in @($InstallerName, "latest.json", "latest.json.sig")) {
+    foreach ($Name in @($InstallerName, $InstallerSignatureName, "latest.json", "latest.json.sig")) {
         $Path = Join-Path $Temporary $Name
         $Assets[$Name] = @{
             sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
