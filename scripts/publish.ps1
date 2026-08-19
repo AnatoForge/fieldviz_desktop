@@ -79,11 +79,11 @@ function Get-ReleaseAssets([string]$ReleaseVersion, [string]$ReleaseDirectory) {
     }
     $InstallerName = "FieldViz_${ReleaseVersion}_x64_Setup.exe"
     $InstallerSignatureName = "$InstallerName.sig"
-    $ExpectedNames = @($InstallerName, $InstallerSignatureName, "latest.json", "latest.json.sig")
+    $ExpectedNames = @($InstallerName, $InstallerSignatureName, "latest.json")
     $Properties = @($State.assets.PSObject.Properties)
     $ActualNames = @($Properties.Name | Sort-Object)
     if ((Compare-Object ($ExpectedNames | Sort-Object) $ActualNames)) {
-        throw "Release assets must contain one versioned installer, its signature, latest.json, and latest.json.sig."
+        throw "Release assets must contain one versioned installer, its signature, and latest.json."
     }
     $Paths = @()
     foreach ($Name in $ExpectedNames) {

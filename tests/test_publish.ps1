@@ -25,10 +25,9 @@ try {
         }
     } | ConvertTo-Json -Depth 5
     [IO.File]::WriteAllText((Join-Path $Temporary "latest.json"), $Manifest, [Text.Encoding]::UTF8)
-    [IO.File]::WriteAllText((Join-Path $Temporary "latest.json.sig"), "signature", [Text.Encoding]::ASCII)
 
     $Assets = @{}
-    foreach ($Name in @($InstallerName, $InstallerSignatureName, "latest.json", "latest.json.sig")) {
+    foreach ($Name in @($InstallerName, $InstallerSignatureName, "latest.json")) {
         $Path = Join-Path $Temporary $Name
         $Assets[$Name] = @{
             sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -46,7 +45,7 @@ try {
     & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Publisher validate $Version $Temporary
     if ($LASTEXITCODE -ne 0) { throw "Valid release assets failed validation." }
 
-    [IO.File]::WriteAllText((Join-Path $Temporary "latest.json.sig"), "modified", [Text.Encoding]::ASCII)
+    [IO.File]::WriteAllText((Join-Path $Temporary $InstallerSignatureName), "modified", [Text.Encoding]::ASCII)
     $null = & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Publisher validate $Version $Temporary 2>&1
     if ($LASTEXITCODE -eq 0) { throw "Modified release assets unexpectedly passed validation." }
 
