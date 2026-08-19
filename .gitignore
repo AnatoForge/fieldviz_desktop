@@ -2,3 +2,5 @@
 *.sig
 latest.json
 release-state.json
+__pycache__/
+*.py[cod]

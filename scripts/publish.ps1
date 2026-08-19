@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $Repository = "AnatoForge/fieldviz_desktop"
-$Branch = "main"
+$Branch = "master"
 $Gh = $null
 
 function Invoke-External([string]$FilePath, [string[]]$Arguments) {
