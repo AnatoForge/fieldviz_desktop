@@ -12,29 +12,24 @@ https://github.com/AnatoForge/fieldviz_desktop/releases/latest/download/latest.j
 
 本仓库使用 PowerShell 校验发布产物, 使用 GitHub 官方 `gh` CLI 上传附件, 不依赖 Python 或 Node.js。
 
-发布工具自检:
+首次使用时, 通过统一命令隐藏输入一次 GitHub Personal Access Token。登录信息会保存在 Windows 凭据存储中, 后续不需要重复输入:
 
 ```powershell
-.\build.cmd test
+.\build.cmd gh-login
 ```
 
-首次使用需要安装并登录 GitHub CLI:
+使用 Classic Personal Access Token 时需要 `repo`、`read:org` 和 `gist` 权限。
+
+检查指定版本是否满足发布条件。该命令会运行发布脚本自检、仓库与 GitHub 环境检查及实际产物校验:
 
 ```powershell
-winget install --id GitHub.cli --exact
-gh auth login
+.\build.cmd test 0.0.2
 ```
 
-在本仓库中可以独立发版本。下面的命令会提示输入 `X.Y.Z`, 并默认读取相邻私有仓库的 `fieldviz\release\vX.Y.Z`:
+发布仓库固定为 `AnatoForge/fieldviz_desktop`。发布时只需提供版本号, 工具会自动读取相邻私有仓库的 `fieldviz\release\vX.Y.Z`:
 
 ```powershell
-.\build.cmd release
+.\build.cmd publish 0.0.2
 ```
 
-也可以显式指定版本号和任意发布产物目录:
-
-```powershell
-.\build.cmd release 0.0.2 D:\codes\fieldviz\qt\fieldviz\release\v0.0.2
-```
-
-安装包、更新清单、Token 和签名私钥都不得提交到本仓库的 Git 历史。
+GitHub CLI 会管理已输入的登录凭据。Token 不会写入命令行、脚本或日志。安装包、更新清单和签名私钥不得提交到本仓库的 Git 历史。

@@ -1,5 +1,6 @@
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
+$Publisher = Join-Path $Root "scripts\publish.ps1"
 $Temporary = Join-Path ([IO.Path]::GetTempPath()) "fieldviz-publish-test-$([guid]::NewGuid())"
 $Version = "1.2.3"
 
@@ -38,11 +39,11 @@ try {
     } | ConvertTo-Json -Depth 5
     [IO.File]::WriteAllText((Join-Path $Temporary "release-state.json"), $State, [Text.Encoding]::UTF8)
 
-    & (Join-Path $Root "build.cmd") validate $Version $Temporary
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Publisher validate $Version $Temporary
     if ($LASTEXITCODE -ne 0) { throw "Valid release assets failed validation." }
 
     [IO.File]::WriteAllText((Join-Path $Temporary "latest.json.sig"), "modified", [Text.Encoding]::ASCII)
-    & (Join-Path $Root "build.cmd") validate $Version $Temporary
+    $null = & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Publisher validate $Version $Temporary 2>&1
     if ($LASTEXITCODE -eq 0) { throw "Modified release assets unexpectedly passed validation." }
 
     Write-Host "PowerShell publisher tests passed" -ForegroundColor Green

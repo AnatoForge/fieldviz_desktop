@@ -4,7 +4,7 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$lines = [IO
 exit /b %errorlevel%
 
 ::# <FIELDVIZ_DESKTOP_POWERSHELL>
-::param([string]$Requested, [string]$Version, [string]$Directory)
+::param([string]$Requested, [string]$Version)
 ::
 ::$ErrorActionPreference = "Stop"
 ::$utf8 = [Text.UTF8Encoding]::new($false)
@@ -14,22 +14,18 @@ exit /b %errorlevel%
 ::$publisherTest = Join-Path $root "tests\test_publish.ps1"
 ::$scriptName = ".\build.cmd"
 ::$menu = @(
-::    @{ Command = "preflight"; Description = "检查 GitHub 发布环境"; Invocation = "scripts\publish.ps1 preflight" }
-::    @{ Command = "test";      Description = "运行发布脚本自检";     Invocation = "tests\test_publish.ps1" }
-::    @{ Command = "validate";  Description = "校验指定版本发布产物"; Invocation = "scripts\publish.ps1 validate VERSION DIRECTORY" }
-::    @{ Command = "release";   Description = "独立发布指定版本";     Invocation = "scripts\publish.ps1 release VERSION [DIRECTORY]" }
-::    @{ Command = "publish";   Description = "发布指定目录产物";     Invocation = "scripts\publish.ps1 publish VERSION DIRECTORY" }
+::    @{ Command = "gh-login"; Description = "输入 Token 登录 GitHub"; Invocation = "gh auth login --with-token" }
+::    @{ Command = "test";     Description = "检查指定版本发布条件";  Invocation = "tests + preflight + validate VERSION" }
+::    @{ Command = "publish";  Description = "发布指定版本";          Invocation = "scripts\publish.ps1 publish VERSION" }
 ::    @{ Command = "exit";      Description = "退出";                 Invocation = "" }
 ::)
 ::
 ::function Show-Help {
 ::    Write-Host "用法:"
 ::    Write-Host "  $scriptName                              打开三列交互菜单"
-::    Write-Host "  $scriptName preflight                    检查 GitHub 发布环境"
-::    Write-Host "  $scriptName test                         运行发布脚本自检"
-::    Write-Host "  $scriptName validate VERSION DIRECTORY   校验发布产物"
-::    Write-Host "  $scriptName release VERSION [DIRECTORY]  独立发布版本"
-::    Write-Host "  $scriptName publish VERSION DIRECTORY    发布指定目录产物"
+::    Write-Host "  $scriptName gh-login                     输入 Token 登录 GitHub"
+::    Write-Host "  $scriptName test VERSION                 检查指定版本发布条件"
+::    Write-Host "  $scriptName publish VERSION              发布指定版本"
 ::    Write-Host "  $scriptName help                         查看帮助"
 ::}
 ::
@@ -72,12 +68,47 @@ exit /b %errorlevel%
 ::    return $result
 ::}
 ::
-::function Read-ReleaseDirectory([bool]$Required) {
-::    if ($Directory) { return $Directory }
-::    if (-not $Required) { return $null }
-::    $result = (Read-Host "请输入发布产物目录").Trim()
-::    if (-not $result) { throw "发布产物目录不能为空" }
-::    return $result
+::function Get-ReleaseDirectory([string]$ReleaseVersion) {
+::    return Join-Path (Split-Path -Parent $root) "fieldviz\release\v$ReleaseVersion"
+::}
+::
+::function Get-GitHubCli {
+::    $command = Get-Command gh -ErrorAction SilentlyContinue
+::    if ($command) { return $command.Source }
+::    $installed = "$env:ProgramFiles\GitHub CLI\gh.exe"
+::    if (Test-Path -LiteralPath $installed -PathType Leaf) { return $installed }
+::    $winget = Get-Command winget -ErrorAction SilentlyContinue
+::    if (-not $winget) { throw "未找到 GitHub CLI 和 winget" }
+::    & $winget.Source install --id GitHub.cli --exact --accept-package-agreements --accept-source-agreements
+::    if ($LASTEXITCODE -ne 0) { throw "GitHub CLI 安装失败, 退出码 $LASTEXITCODE" }
+::    if (Test-Path -LiteralPath $installed -PathType Leaf) { return $installed }
+::    $command = Get-Command gh -ErrorAction SilentlyContinue
+::    if ($command) { return $command.Source }
+::    throw "GitHub CLI 已安装但未找到 gh.exe, 请重新打开终端后重试"
+::}
+::
+::function Connect-GitHub {
+::    $gh = Get-GitHubCli
+::    & $gh auth status --hostname github.com *> $null
+::    if ($LASTEXITCODE -eq 0) {
+::        Write-Host "GitHub CLI 已登录" -ForegroundColor Green
+::        return
+::    }
+::    $secureToken = Read-Host "GitHub Personal Access Token" -AsSecureString
+::    $tokenPointer = [IntPtr]::Zero
+::    $token = $null
+::    try {
+::        $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
+::        $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($tokenPointer)
+::        if (-not $token) { throw "GitHub Token 不能为空" }
+::        $token | & $gh auth login --hostname github.com --git-protocol https --with-token
+::        if ($LASTEXITCODE -ne 0) { throw "GitHub 登录失败, 退出码 $LASTEXITCODE" }
+::    } finally {
+::        if ($tokenPointer -ne [IntPtr]::Zero) {
+::            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($tokenPointer)
+::        }
+::        $token = $null
+::    }
 ::}
 ::
 ::function Invoke-PowerShellFile([string]$File, [string[]]$Arguments) {
@@ -93,23 +124,19 @@ exit /b %errorlevel%
 ::    if ($command -eq "exit") { exit 0 }
 ::
 ::    switch ($command) {
-::        "preflight" { Invoke-PowerShellFile $publisher @("preflight") }
-::        "test" { Invoke-PowerShellFile $publisherTest @() }
-::        "validate" {
-::            $releaseVersion = Read-ReleaseVersion
-::            $releaseDirectory = Read-ReleaseDirectory $true
-::            Invoke-PowerShellFile $publisher @("validate", $releaseVersion, $releaseDirectory)
+::        "gh-login" {
+::            Connect-GitHub
 ::        }
-::        "release" {
+::        "test" {
 ::            $releaseVersion = Read-ReleaseVersion
-::            $arguments = @("release", $releaseVersion)
-::            $releaseDirectory = Read-ReleaseDirectory $false
-::            if ($releaseDirectory) { $arguments += $releaseDirectory }
-::            Invoke-PowerShellFile $publisher $arguments
+::            $releaseDirectory = Get-ReleaseDirectory $releaseVersion
+::            Invoke-PowerShellFile $publisherTest @()
+::            Invoke-PowerShellFile $publisher @("preflight")
+::            Invoke-PowerShellFile $publisher @("validate", $releaseVersion, $releaseDirectory)
 ::        }
 ::        "publish" {
 ::            $releaseVersion = Read-ReleaseVersion
-::            $releaseDirectory = Read-ReleaseDirectory $true
+::            $releaseDirectory = Get-ReleaseDirectory $releaseVersion
 ::            Invoke-PowerShellFile $publisher @("publish", $releaseVersion, $releaseDirectory)
 ::        }
 ::        default { throw "未知操作: $command, 请使用 $scriptName help 查看选项" }

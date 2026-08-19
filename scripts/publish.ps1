@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("preflight", "validate", "publish", "release")]
+    [ValidateSet("preflight", "validate", "publish")]
     [string]$Command = "preflight",
     [string]$Version,
     [string]$Directory
@@ -41,7 +41,7 @@ function Require-GitHubCli {
         throw "GitHub CLI is missing. Run: winget install --id GitHub.cli --exact"
     }
     & $script:Gh auth status --hostname github.com
-    if ($LASTEXITCODE -ne 0) { throw "GitHub CLI is not authenticated. Run: gh auth login" }
+    if ($LASTEXITCODE -ne 0) { throw "GitHub CLI is not authenticated. Run: .\build.cmd gh-login" }
 }
 
 function Require-Version([string]$Value) {
@@ -135,17 +135,6 @@ try {
             Write-Host "Release asset validation passed." -ForegroundColor Green
         }
         "publish" {
-            Require-PublicRepository
-            Require-GitHubCli
-            $Assets = @(Get-ReleaseAssets $Version $Directory)
-            Publish-Release $Version $Assets
-        }
-        "release" {
-            if (-not $Version) { $Version = Read-Host "Release version (X.Y.Z)" }
-            Require-Version $Version
-            if (-not $Directory) {
-                $Directory = Join-Path (Split-Path -Parent $Root) "fieldviz\release\v$Version"
-            }
             Require-PublicRepository
             Require-GitHubCli
             $Assets = @(Get-ReleaseAssets $Version $Directory)
